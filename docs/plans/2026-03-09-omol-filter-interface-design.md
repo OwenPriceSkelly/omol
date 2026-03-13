@@ -1,6 +1,6 @@
 # OMol25 Filter Interface — Design Document
 
-*Date: 2026-03-09*
+*Date: 2026-03-09 — Updated 2026-03-13*
 
 ## Problem
 
@@ -10,7 +10,7 @@ The goal is a lightweight interface that lets exploratory users filter by chemic
 
 ## Design Principles
 
-- **4M-first, 100M-ready**: prototype against the 4M ASE-DB split; no architectural changes needed to scale to the full dataset.
+- **4M-first, scale-ready**: prototype against the 4M ASE-DB split; no architectural changes needed to scale to the full dataset. (The full OMol25 corpus is now ~140M structures across OMol-0 and OMol-1, with OPoly26 adding ~6M more — "100M" is no longer the right ceiling.)
 - **No pre-computation required**: the system works correctly from a cold start using columnar scans. Pre-aggregated statistics can be slotted in later as a performance optimization without changing any interfaces.
 - **Manifest-first transfer**: the prototype produces a file manifest the user hands to Globus. First-class Globus Auth integration (service-initiated transfers) is a clear v2 story.
 - **Extensible filter spec**: the query data structure is typed and versioned, not a DSL string. New filter dimensions are additive.
@@ -28,15 +28,26 @@ A single parquet file (or partitioned set at 100M scale) with one row per struct
 
 These are the primary query columns for the prototype. They compress extremely well in parquet's columnar encoding and map directly to fast AND/NOT operations.
 
+**Scalar properties** (available at no extra cost from `atoms.info` during the ASE-DB scan):
+- `charge` — int
+- `spin` — int (multiplicity, 2S+1)
+- `num_atoms` — int
+- `num_electrons` — int
+- `unrestricted` — boolean
+- `homo_lumo_gap` — float (eV)
+- `n_basis` — int
+
+These are cheap to include — the index build already iterates every structure, and `atoms.info` carries all of these. No second pass required. Energy and forces are omitted (stored separately as tensors, not scalars).
+
 **Provenance / routing**:
-- `domain` — categorical: `small_molecule`, `biomolecule`, `metal_complex`, `electrolyte`
-- `subsampling` — string tag extracted from file path
-- `eagle_path` — relative path matching the Globus collection structure
-- `file_sizes` — struct with sizes (bytes) for each file type: `orca_tar_zst`, `gbw`, `density_mat_npz`
+- `domain` — categorical, sourced from `atoms.info["data_id"]` (e.g. `elytes`). See open question 3 for full `data_id` taxonomy.
+- `subsampling` — top-level directory name (34 distinct values; see [[directory-structure-analysis]] for taxonomy). Encodes subdataset origin at the right granularity for routing and display.
+- `eagle_path` — `os.path.dirname(atoms.info["source"])`, matching Globus collection paths exactly
+- `file_sizes` — struct with sizes (bytes) for each file type: `orca_tar_zst`, `gbw`, `density_mat_npz`. **Not available from the ASE-DB** — requires a separate pass. See open question 4.
 
 ### Extensibility
 
-Scalar filter dimensions (charge, spin, num_atoms, num_electrons, energy, forces) are deliberately omitted from the prototype but are straightforward to add: re-run the extraction script with new columns, add a new field type to the filter spec. No other changes required.
+The filter spec is additive. New filter types (e.g. range filters on `num_atoms`, `charge`, `homo_lumo_gap`) require adding a field to the spec and a clause to the DuckDB executor — no other changes. OMol-1 and OPoly26 are out of scope for the prototype but use the same ASE-DB format; extending the index to cover them is mechanical (point the build script at the additional datasets).
 
 ### Build Pipeline
 
@@ -44,16 +55,21 @@ A one-time extraction script over the ASE-DB:
 
 ```python
 from fairchem.core.datasets import AseDBDataset
+import os
 
 dataset = AseDBDataset({"src": "path/to/train_4M/"})
 for idx in range(len(dataset)):
     atoms = dataset.get_atoms(idx)
-    # extract elements → has_<element> booleans
-    # extract domain, subsampling from atoms.info["source"]
-    # extract eagle_path = os.path.dirname(atoms.info["source"])
+    # elements → has_<element> booleans (from atoms.get_atomic_numbers() or atoms.info["composition"])
+    # domain ← atoms.info["data_id"]  (e.g. "elytes" — NOT parsed from source path)
+    # subsampling ← top-level directory: atoms.info["source"].split("/")[0]
+    # eagle_path ← os.path.dirname(atoms.info["source"])
+    # scalar columns ← atoms.info["charge"], ["spin"], ["num_atoms"], ["num_electrons"],
+    #                   ["unrestricted"], ["homo_lumo_gap"], ["n_basis"]
+    # file_sizes ← NOT available here; requires separate pass (see open question 4)
 ```
 
-Output is written to `omol_index.parquet`. At 4M rows this runs in minutes. At 100M, same script, longer runtime.
+Output is written to `omol_index.parquet`. At 4M rows this runs in minutes on a machine with the ASE-DB locally available. Same script at larger scale, longer runtime.
 
 ---
 
@@ -67,7 +83,9 @@ A plain JSON-serializable structure that describes what the user wants, without 
 {
   "must_have": ["Fe", "N"],
   "must_not_have": ["La", "Ce", "Pr"],
-  "domain": "metal_complex"
+  "domain": "metal_complex",
+  "num_atoms": {"min": 10, "max": 100},
+  "charge": 0
 }
 ```
 
@@ -103,19 +121,21 @@ Accepts a filter spec. Returns count and estimated transfer size. This is the "p
 
 **`POST /query/manifest`**
 
-Accepts a filter spec and an optional `format` parameter. Returns a manifest the user can pass directly to the Globus CLI to initiate a transfer.
+Accepts a filter spec, an optional `format` parameter, and an optional `file_types` parameter. Returns a manifest the user can pass directly to the Globus CLI to initiate a transfer.
+
+**`file_types`** — controls which files are included per structure. Default is all three. `file_types=["orca_tar_zst"]` produces a hot-tier-only manifest (ORCA text outputs only — energies, forces, NBO charges), substantially smaller than a full transfer. This maps directly onto the underlying hot/warm storage tier split: `orca.tar.zst` is hot, `density_mat.npz` and `orca.gbw.zstd0` are warm. Users who only need to parse ORCA output text don't need wavefunction files.
 
 **`format=globus_batch`** (default) — returns a plain-text file ready to pipe into `globus transfer --batch`:
 
 ```
 # OMol25 subset — 14,200 systems
-# Usage: globus transfer $EAGLE_EP:/path/prefix/ $DEST_EP:/local/path/ --batch manifest.txt
---recursive system_001/ system_001/
---recursive system_002/ system_002/
+# Usage: globus transfer $EAGLE_EP:/ $DEST_EP:/local/path/ --batch manifest.txt
+system_001/orca.tar.zst system_001/orca.tar.zst
+system_002/orca.tar.zst system_002/orca.tar.zst
 ...
 ```
 
-Each line uses the `--recursive` flag to transfer the entire system directory (containing `orca.tar.zst`, `gbw`, `density_mat.npz`). Paths are relative to the Eagle collection root, so the user supplies source and destination prefixes on the `globus transfer` command line. All lines are submitted as a single Globus transfer task.
+For full-directory transfers (`file_types` = all), lines use `--recursive`. For `file_types` subsets, lines enumerate individual files. Paths are relative to the Eagle collection root. All lines are submitted as a single Globus transfer task.
 
 The batch file format is parsed by `globus transfer` using Python's `shlex` module — paths with spaces must be quoted, `#` lines are comments, blank lines are ignored.
 
@@ -167,7 +187,9 @@ Argument parsing maps directly to `FilterSpec` fields. Adding a new filter type 
 A static page hitting the REST API directly from the browser:
 - Checkbox grid for elements (grouped by periodic table region)
 - Dropdown for domain
+- Sliders / range inputs for scalar filters (num_atoms, charge)
 - Live count + size estimate, updated on every filter change (debounced, calls `/query/count`)
+- File type selector (all / ORCA outputs only / wavefunction files only)
 - "Generate manifest" button (calls `/query/manifest`, triggers download)
 
 No server-side rendering required. Can be hosted as a static site alongside the API.
@@ -198,11 +220,11 @@ Parquet remains the canonical source of truth regardless of backend — it's por
 
 ## What Is Explicitly Out of Scope (Prototype)
 
-- Scalar property filters (charge, spin, size, energy, forces) — additive later
 - Pre-aggregated statistics — slot in behind the query abstraction later
 - Globus Auth / service-initiated transfers — v2
 - User accounts, saved queries, transfer history
 - The "data enclave" / remote compute model discussed in the meeting — longer-term
+- OMol-1 and OPoly26 datasets — same ASE-DB format and DFT settings as OMol-0, so extension is mechanical (point the build script at additional datasets, union the parquet files). Extensibility to cover these should be a priority when designing the index schema and build pipeline, even if execution is deferred.
 
 ---
 
@@ -211,3 +233,5 @@ Parquet remains the canonical source of truth regardless of backend — it's por
 1. **Index hosting**: Where does `omol_index.parquet` live? On Eagle (served via the API), or mirrored somewhere with lower latency (e.g. a small VM)?
 2. **API hosting**: Who runs the API server, and where? Argonne, UChicago, or a lightweight cloud VM?
 3. ~~**Manifest format**~~: Resolved. `globus transfer --batch` expects a plain-text file with one `SOURCE_PATH DEST_PATH` pair per line (parsed via Python `shlex`). Per-line `--recursive` flag for directories. Source/dest prefixes on the command line allow relative paths in the batch file. The manifest endpoint defaults to this format.
+4. **`data_id` values for all domains**: We know `elytes`. The other domain values (biomolecules, metal complexes, small molecules/community data) need to be confirmed from the ASE-DB before the `domain` filter can be mapped correctly. See [[open_questions]].
+5. **`file_sizes` column feasibility**: Getting per-structure file sizes requires a separate pass beyond the ASE-DB scan — either `globus ls -l` (slow at 4M scale) or S3 `HeadObject` against `archive/hot/` and `archive/warm/` prefixes (fast, cheap, but requires confirming S3 credentials are still valid). Is this feasible for the prototype? If not, fallback is per-subdataset averages derived from the size samples in [[directory-structure-analysis]]; these would be good enough for order-of-magnitude transfer estimates.

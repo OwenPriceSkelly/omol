@@ -77,7 +77,7 @@ Paths have **variable depth** depending on provenance:
 | 5 | 891,523 | `omol/domain/batch/system_id/stepN` | `omol/electrolytes/solvated_090624/mol_name.../step4` |
 | 6 | 173,215 | `omol/domain/sub/batch/system_id/stepN` | `omol/electrolytes/md_based/outputs_241029/.../step0` |
 
-The `atoms.info["source"]` field in the ASE-DB includes the filename suffix (e.g. `.../step3/orca.tar.zst`). `os.path.dirname(source)` gives the directory — matching the paths in Paths.txt exactly.
+The `atoms.info["source"]` field in the ASE-DB includes the filename suffix (e.g. `.../step3/orca.tar.zst`). `os.path.dirname(source)` gives the directory — matching the paths in 4m_paths.txt exactly.
 
 ---
 
