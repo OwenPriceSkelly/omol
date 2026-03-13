@@ -1,7 +1,8 @@
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.12,<3.13"
 # dependencies = [
 #     "fairchem-core",
+#     "setuptools<81",
 # ]
 #
 # [tool.uv.sources]
@@ -19,7 +20,7 @@ Answers:
 Usage:
     uv run scripts/explore_ase_db.py --src path/to/train_4M/
 
-Output: prints a report to stdout and writes omol-notes/ase-db-exploration.md
+Output: prints a report to stdout and writes notes/ase-db-exploration.md
 """
 
 import argparse
@@ -161,7 +162,7 @@ def main():
     report = "\n".join(lines)
     print("\n" + report)
 
-    out_path = Path(__file__).parent.parent / "omol-notes" / "ase-db-exploration.md"
+    out_path = Path(__file__).parent.parent / "notes" / "ase-db-exploration.md"
     out_path.write_text(report)
     print(f"\nWrote report to {out_path}")
 

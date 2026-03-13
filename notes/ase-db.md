@@ -1,6 +1,6 @@
 # ASE-DB Index
 
-*From [[DATASET]] (HuggingFace) and [[OMOL_README]]*
+*From [[notes/DATASET]] (HuggingFace) and [[notes/OMOL_README]]*
 
 ## What It Is
 
@@ -38,9 +38,9 @@ Each entry is an ASE `Atoms` object with:
 
 | Field | Type | Notes |
 |---|---|---|
-| `source` | str | Full path including filename, e.g. `omol/electrolytes/.../step3/orca.tar.zst`. `os.path.dirname(source)` gives the Eagle directory path matching [[directory-structure-analysis]] and `4m_paths.txt`. |
+| `source` | str | Full path including filename, e.g. `omol/electrolytes/.../step3/orca.tar.zst`. `os.path.dirname(source)` gives the Eagle directory path matching [[notes/directory-structure-analysis]] and `4m_paths.txt`. |
 | `reference_source` | str/None | Internal identifier, often None |
-| `data_id` | str | Domain label. Known: `elytes`. Other values TBD — see open question in [[open_questions]]. |
+| `data_id` | str | Domain label. Known: `elytes`. Other values TBD — see open question in [[notes/open_questions]]. |
 | `charge` | int | Total molecular charge |
 | `spin` | int | Spin **multiplicity** (2S+1). 1 = singlet, 3 = triplet, etc. NOT unpaired electron count. |
 | `num_atoms` | int | Atom count |
@@ -97,7 +97,7 @@ Fields Santiago adds that are NOT in the ASE-DB:
 - Fuzzy bond orders
 - ALIE surface descriptors, molecular volume
 
-See [[santiago-derived-descriptors]].
+See [[notes/santiago-derived-descriptors]].
 
 ## Index Build Notes
 
@@ -110,3 +110,5 @@ For the parquet index (see [[2026-03-09-omol-filter-interface-design]]):
 - `file_sizes` ← not in ASE-DB; requires separate Globus/S3 HeadObject pass
 
 The 4M split (3,986,754 entries) iterates in minutes on a single machine.
+
+See also: [[notes/ase-db-exploration|ase-db-exploration]]

@@ -41,7 +41,7 @@ These are cheap to include — the index build already iterates every structure,
 
 **Provenance / routing**:
 - `domain` — categorical, sourced from `atoms.info["data_id"]` (e.g. `elytes`). See open question 3 for full `data_id` taxonomy.
-- `subsampling` — top-level directory name (34 distinct values; see [[directory-structure-analysis]] for taxonomy). Encodes subdataset origin at the right granularity for routing and display.
+- `subsampling` — top-level directory name (34 distinct values; see [[notes/directory-structure-analysis]] for taxonomy). Encodes subdataset origin at the right granularity for routing and display.
 - `eagle_path` — `os.path.dirname(atoms.info["source"])`, matching Globus collection paths exactly
 - `file_sizes` — struct with sizes (bytes) for each file type: `orca_tar_zst`, `gbw`, `density_mat_npz`. **Not available from the ASE-DB** — requires a separate pass. See open question 4.
 
@@ -233,5 +233,5 @@ Parquet remains the canonical source of truth regardless of backend — it's por
 1. **Index hosting**: Where does `omol_index.parquet` live? On Eagle (served via the API), or mirrored somewhere with lower latency (e.g. a small VM)?
 2. **API hosting**: Who runs the API server, and where? Argonne, UChicago, or a lightweight cloud VM?
 3. ~~**Manifest format**~~: Resolved. `globus transfer --batch` expects a plain-text file with one `SOURCE_PATH DEST_PATH` pair per line (parsed via Python `shlex`). Per-line `--recursive` flag for directories. Source/dest prefixes on the command line allow relative paths in the batch file. The manifest endpoint defaults to this format.
-4. **`data_id` values for all domains**: We know `elytes`. The other domain values (biomolecules, metal complexes, small molecules/community data) need to be confirmed from the ASE-DB before the `domain` filter can be mapped correctly. See [[open_questions]].
-5. **`file_sizes` column feasibility**: Getting per-structure file sizes requires a separate pass beyond the ASE-DB scan — either `globus ls -l` (slow at 4M scale) or S3 `HeadObject` against `archive/hot/` and `archive/warm/` prefixes (fast, cheap, but requires confirming S3 credentials are still valid). Is this feasible for the prototype? If not, fallback is per-subdataset averages derived from the size samples in [[directory-structure-analysis]]; these would be good enough for order-of-magnitude transfer estimates.
+4. **`data_id` values for all domains**: We know `elytes`. The other domain values (biomolecules, metal complexes, small molecules/community data) need to be confirmed from the ASE-DB before the `domain` filter can be mapped correctly. See [[notes/open_questions]].
+5. **`file_sizes` column feasibility**: Getting per-structure file sizes requires a separate pass beyond the ASE-DB scan — either `globus ls -l` (slow at 4M scale) or S3 `HeadObject` against `archive/hot/` and `archive/warm/` prefixes (fast, cheap, but requires confirming S3 credentials are still valid). Is this feasible for the prototype? If not, fallback is per-subdataset averages derived from the size samples in [[notes/directory-structure-analysis]]; these would be good enough for order-of-magnitude transfer estimates.

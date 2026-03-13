@@ -1,0 +1,7 @@
+Downloading setuptools (1.0MiB)
+ Downloading setuptools
+Uninstalled 1 package in 29ms
+Installed 1 package in 7ms
+/Users/owen/.cache/uv/environments-v2/explore-ase-db-3f532336f55f3f1a/lib/python3.12/site-packages/torchtnt/utils/version.py:12: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+W0313 13:33:15.533000 26419 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.

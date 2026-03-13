@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository contains miscellaneous infrastructure and analysis work for the OMol25 dataset, maintained at Argonne National Laboratory. The big-picture goal is to build tooling that makes the dataset usable for science. This repository in particular is for exploring and understanding the dataset and for quick prototyping. 
 
-An explicit early goal is to build up a personal knowledge base of context for ourselves in the omol-notes subdirectory. In particular, we maintain a [[open_questions]] living note for bookkeeping which can and should be updated frequently as the knowledge base grows. The user will want to interact with the notes as an obsidian vault, so links formatted like [[OMOL_README]] (or e.g. [[OMOL_README#Data Description]] for specific headings) are *extremely* valuable for cross-referencing. 
+An explicit early goal is to build up a personal knowledge base of context for ourselves in the notes subdirectory. In particular, we maintain a [[notes/open_questions]] living note for bookkeeping which can and should be updated frequently as the knowledge base grows. The user will want to interact with the notes as an obsidian vault, so links formatted like [[notes/OMOL_README]] (or e.g. [[notes/OMOL_README#Data Description]] for specific headings) are *extremely* valuable for cross-referencing. Note the syntax for specific headings is just their text verbatim, e.g. `[[OMOL_README#Data Description]]`, not `[[OMOL_README#data-description]`.
 
 Plans for prototypes and implementations live in the docs/plans subdirectory. 
 
@@ -21,7 +21,7 @@ Scripts used for exploring the dataset should be saved to the scripts subdirecto
 
 ```
 
-Temporary downloads and other misc artifacts can be saved to the scratch subdirectory, which may be occasionally manually wiped by the user as needed. **Do not pollute your context window by reading from the scratch directory unnecessarily.**
+Temporary downloads and other misc artifacts can be saved to the scratch subdirectory, which may be occasionally manually wiped by the user as needed. **Do not pollute your context window by reading from the scratch or data directory unnecessarily.**
 
 ## Dataset
 
