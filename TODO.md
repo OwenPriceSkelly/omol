@@ -34,5 +34,5 @@
 - [x] Stand up FastAPI server as Modal app (`spyhop/app.py`) with `/query/count` and `/query/manifest` endpoints
 - [x] Python client library wrapping the two endpoints (`src/spyhop/client.py`)
 - [x] CLI (`spyhop count`, `spyhop manifest`) wrapping the library
-- [ ] Web frontend (static page, periodic table element picker, live count/size estimate)
+- [x] Web frontend (`spyhop/index.html` — periodic table picker, live count, manifest download)
 - [ ] Deploy via `modal deploy spyhop/app.py`
