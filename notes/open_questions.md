@@ -3,19 +3,13 @@
 ## Active
 
 ### What is the file size distribution across the full 4M?
-Six hand-sampled points show ~100× variation (0.8 MB to 94 MB per structure). Need a broader sample to estimate total dataset size and calibrate transfer size estimates in the manifest service. S3 `HeadObject` could be used for cheap per-file size queries.
-
-### Is getting per-structure file sizes feasible for the prototype index?
-The parquet index design calls for a `file_sizes` struct column, but file sizes are not in the ASE-DB — they require a separate pass. Options: (a) `globus ls -l` on all 4M paths (slow), (b) S3 `HeadObject` against `archive/hot/` and `archive/warm/` prefixes (fast/cheap, but requires confirming S3 credentials are still valid — they may be expired), (c) per-subdataset averages derived from the size samples in [[notes/directory-structure-analysis]] (good enough for order-of-magnitude estimates). Answer determines whether `file_sizes` is in the prototype or deferred. See [[docs/plans/2026-03-09-omol-filter-interface-design|2026-03-09-omol-filter-interface-design]]
+Six hand-sampled points show ~100× variation (0.8 MB to 94 MB per structure). Need a broader sample (~200 structures stratified by domain × n_basis quartile) to calibrate the n_basis regression for transfer size estimates. Pending: collect actual sizes via `globus ls -l` or S3 `HeadObject` (if temporary creds are available). See [[docs/plans/2026-03-09-omol-filter-interface-design#File Size Strategy|design doc]].
 
 ### How complete is Santiago's descriptor layer, and when does it arrive at ALCF?
 Santiago is generating Multiwfn-derived descriptors (QTAIM, bond orders, multiple charge schemes, ALIE surface properties, parsed orca.out) for the OMol25 structures. Not yet complete for all 4M. Plans to convert to LMDBs keyed by path. Storage space at ALCF is an open question. See [[notes/santiago-derived-descriptors]].
 
 ### What is the true extent of missing/corrupted files across all 4M paths?
 `missing.txt` and `failures.txt` in `test/` represent a spot-check of ~20 paths, not a full audit. 6 of those failed. The `reverifier_progress.json` (a second pass) also exists — but we don't know its scope. The index build needs to handle missing files gracefully; the actual missing rate is unknown. See [[notes/s3-access-and-storage-tiers]]. (NOTE: these are likely just out of date - we can assume for now that files are not missing or corrupted)
-
-### What is the `subsampling` tag taxonomy?
-~~The design plan ([[2026-03-09-omol-filter-interface-design]]) calls for a `subsampling` field. The right granularity is unclear: top-level directory name, `omol/` sub-batch name, or a coarser `ml_*` vs hand-generated distinction?~~
 
 ---
 
@@ -46,7 +40,7 @@ Confirmed across depth-2 (flat community datasets), depth-4 (omol/metal_organics
 The prototype covers the OMol-0 4M split. OMol-1 (~140M structures) and OPoly26 (~6M polymers) use the same ASE-DB format and DFT settings; extending the index to cover them is mechanical. The index schema and build pipeline should be designed with this extension in mind even if execution is deferred.
 
 ### What are the `data_id` string values for all four domains? (RESOLVED — 10 values total)
-Full scan of 3,986,754 entries via [[notes/ase-db-exploration]]. The four large domains: `biomolecules` (20.1%), `elytes` (20.1%), `metal_complexes` (20.0%), `reactivity` (19.8%). Community datasets: `ani2x`, `trans1x`, `geom_orca6`, `rgd`, `orbnet_denali`, `spice`. Note `reactivity` was not on the original shortlist — it covers `ani1xbb`, `pmechdb`, `rmechdb`, `tm_react`. Full top-level-dir → data_id mapping in [[notes/ase-db-exploration#1-data_id-values]].
+Full scan of 3,986,754 entries via [[notes/ase-db-exploration]]. The four large domains: `biomolecules` (20.1%), `elytes` (20.1%), `metal_complexes` (20.0%), `reactivity` (19.8%). Community datasets: `ani2x`, `trans1x`, `geom_orca6`, `rgd`, `orbnet_denali`, `spice`. Note `reactivity` was not on the original shortlist — it covers `ani1xbb`, `pmechdb`, `rmechdb`, `tm_react`. Full top-level-dir → data_id mapping in [[notes/ase-db-exploration#1. `data_id` Values|ase-db-exploration]].
 
 ### Are all optimization steps indexed in the ASE-DB, or only final geometries? (RESOLVED — individual steps ARE indexed)
 1,064,738 entries (26.7%) have a `/stepN/` path component, across 970,214 unique parent paths. Most parents contribute only 1 step (91.3%), but a parent can contribute many scattered steps (e.g., steps [5, 28, 36, 40, 45, 46]). Steps are not stored as full sequential trajectories — each is an independent entry. See [[notes/ase-db-exploration#2. Optimization Steps]].

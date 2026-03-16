@@ -1,6 +1,6 @@
 # OMol25 Filter Interface — Design Document
 
-*Date: 2026-03-09 — Updated 2026-03-13*
+*Date: 2026-03-09 — Updated 2026-03-16*
 
 ## Problem
 
@@ -11,7 +11,7 @@ The goal is a lightweight interface that lets exploratory users filter by chemic
 ## Design Principles
 
 - **4M-first, scale-ready**: prototype against the 4M ASE-DB split; no architectural changes needed to scale to the full dataset. (The full OMol25 corpus is now ~140M structures across OMol-0 and OMol-1, with OPoly26 adding ~6M more — "100M" is no longer the right ceiling.)
-- **No pre-computation required**: the system works correctly from a cold start using columnar scans. Pre-aggregated statistics can be slotted in later as a performance optimization without changing any interfaces.
+- **No pre-computation required**: the system works correctly from a cold start using columnar scans. Pre-aggregated statistics (e.g. cached domain-level counts, histogram buckets for common queries) can be slotted in behind the query abstraction later as a performance optimization without changing any interfaces. "Not required" means the system is correct without pre-computation — not that pre-computation is forbidden. If the web frontend drives enough traffic that per-query scans become a bottleneck, caching is a natural and zero-API-change optimization.
 - **Manifest-first transfer**: the prototype produces a file manifest the user hands to Globus. First-class Globus Auth integration (service-initiated transfers) is a clear v2 story.
 - **Extensible filter spec**: the query data structure is typed and versioned, not a DSL string. New filter dimensions are additive.
 
@@ -43,7 +43,7 @@ These are cheap to include — the index build already iterates every structure,
 - `domain` — categorical, sourced from `atoms.info["data_id"]` (e.g. `elytes`). See open question 3 for full `data_id` taxonomy.
 - `subsampling` — top-level directory name (34 distinct values; see [[notes/directory-structure-analysis]] for taxonomy). Encodes subdataset origin at the right granularity for routing and display.
 - `eagle_path` — `os.path.dirname(atoms.info["source"])`, matching Globus collection paths exactly
-- `file_sizes` — struct with sizes (bytes) for each file type: `orca_tar_zst`, `gbw`, `density_mat_npz`. **Not available from the ASE-DB** — requires a separate pass. See open question 4.
+- `file_sizes` — struct with sizes (bytes) for each file type: `orca_tar_zst`, `gbw`, `density_mat_npz`. **Not available from the ASE-DB** — estimated via regression on `n_basis` (and optionally `n_scf_steps`), calibrated from a sampled set of ~200 structures with actual sizes. See file size strategy below.
 
 ### Extensibility
 
@@ -66,7 +66,7 @@ for idx in range(len(dataset)):
     # eagle_path ← os.path.dirname(atoms.info["source"])
     # scalar columns ← atoms.info["charge"], ["spin"], ["num_atoms"], ["num_electrons"],
     #                   ["unrestricted"], ["homo_lumo_gap"], ["n_basis"]
-    # file_sizes ← NOT available here; requires separate pass (see open question 4)
+    # file_sizes ← estimated via n_basis regression (see file size strategy below)
 ```
 
 Output is written to `omol_index.parquet`. At 4M rows this runs in minutes on a machine with the ASE-DB locally available. Same script at larger scale, longer runtime.
@@ -198,9 +198,13 @@ No server-side rendering required. Can be hosted as a static site alongside the 
 
 ## Technology Stack
 
-### Prototype: Parquet + DuckDB
+### Prototype: Parquet + DuckDB on Modal
 
-The parquet file *is* the database — no server process to provision. DuckDB reads parquet natively, including over HTTP via byte-range requests, so the index can live on Eagle or any HTTP server without the API server downloading it first. Parquet's columnar encoding is particularly well-suited to our schema: ~90 low-cardinality boolean columns compress to almost nothing, and DuckDB only reads columns touched by a query.
+**Index**: The parquet file lives in a Modal Volume. At 4M rows with ~90 boolean element columns + scalar properties, the file will be 200–400 MB — small enough to load into memory on API server startup. Parquet's columnar encoding is particularly well-suited to our schema: low-cardinality boolean columns compress to almost nothing, and DuckDB only reads columns touched by a query. Modal Volumes are optimized for write-once-read-many workloads, which matches the index access pattern exactly (built once, read on every query, rebuilt only when the underlying ASE-DB changes).
+
+**API server**: FastAPI + DuckDB deployed as a `@modal.fastapi_app()`. The Modal Volume is mounted read-only into the container; the server loads the parquet at startup and serves queries via DuckDB's in-process engine. Scaling and container lifecycle are managed by Modal. Index updates require only `modal volume put` followed by `modal deploy` — no Docker registry, no cloud infra to manage.
+
+**Upgrade path at scale**: At 100M+ rows the index may be too large to hold fully in memory. DuckDB can scan parquet directly from the mounted volume path without loading it fully, so the server can switch to lazy scanning without changing the API.
 
 The executor is the only component that knows about DuckDB or parquet. Everything above it speaks filter specs and result types, which makes the backend swappable.
 
@@ -230,8 +234,27 @@ Parquet remains the canonical source of truth regardless of backend — it's por
 
 ## Open Questions
 
-1. **Index hosting**: Where does `omol_index.parquet` live? On Eagle (served via the API), or mirrored somewhere with lower latency (e.g. a small VM)?
-2. **API hosting**: Who runs the API server, and where? Argonne, UChicago, or a lightweight cloud VM?
+1. ~~**Index hosting**~~: Resolved. Modal Volume (write-once-read-many, mounted into the API container). API server loads the parquet into memory at startup. See Technology Stack above.
+2. ~~**API hosting**~~: Resolved. FastAPI + DuckDB as a `@modal.fastapi_app()`, index on a Modal Volume.
 3. ~~**Manifest format**~~: Resolved. `globus transfer --batch` expects a plain-text file with one `SOURCE_PATH DEST_PATH` pair per line (parsed via Python `shlex`). Per-line `--recursive` flag for directories. Source/dest prefixes on the command line allow relative paths in the batch file. The manifest endpoint defaults to this format.
-4. **`data_id` values for all domains**: We know `elytes`. The other domain values (biomolecules, metal complexes, small molecules/community data) need to be confirmed from the ASE-DB before the `domain` filter can be mapped correctly. See [[notes/open_questions]].
-5. **`file_sizes` column feasibility**: Getting per-structure file sizes requires a separate pass beyond the ASE-DB scan — either `globus ls -l` (slow at 4M scale) or S3 `HeadObject` against `archive/hot/` and `archive/warm/` prefixes (fast, cheap, but requires confirming S3 credentials are still valid). Is this feasible for the prototype? If not, fallback is per-subdataset averages derived from the size samples in [[notes/directory-structure-analysis]]; these would be good enough for order-of-magnitude transfer estimates.
+4. ~~**`data_id` values for all domains**~~: Resolved. See [[notes/open_questions#What are the `data_id` string values for all four domains? (RESOLVED — 10 values total)|open_questions (RESOLVED)]]
+5. ~~**`file_sizes` column feasibility**~~: Resolved — use `n_basis` regression. See file size strategy below.
+
+---
+
+## File Size Strategy
+
+Per-structure file sizes are not in the ASE-DB, but file sizes correlate strongly with `n_basis` (basis function count), which *is* in the ASE-DB:
+
+- `density_mat.npz` stores the upper triangle of the density matrix → size ∝ n_basis²
+- `orca.gbw.zstd0` stores full MO coefficients → size ∝ n_basis²
+- `orca.tar.zst` is text output (more variable) → loosely correlated with n_basis, tighter with n_basis × n_scf_steps
+
+**Approach**:
+
+1. Sample ~200 structures stratified across domains and the `n_basis` range (selected from the ASE-DB)
+2. Collect actual file sizes for the sample via `globus ls -l` (~200 calls, feasible in minutes) — or via S3 `HeadObject` if temporary credentials are available (faster, avoids Globus rate limits)
+3. Fit simple regression models: `density_mat_size ~ a * n_basis^2`, `gbw_size ~ b * n_basis^2`, `orca_tar_size ~ c * n_basis` (with `n_scf_steps` as optional second predictor)
+4. Apply the models to all 4M structures to populate `file_sizes` in the parquet index
+
+This gives per-structure estimates (not just per-domain averages) with ~20–30% error — more than sufficient for "your selection is ~56 GB" transfer estimates. The index build script generates the `file_sizes` column as nullable so it can be backfilled once the regression is calibrated, or replaced with exact sizes if a full pass becomes feasible later.
