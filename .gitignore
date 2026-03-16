@@ -3,3 +3,4 @@
 /4M_paths.txt
 scratch/
 data/
+*.pyc

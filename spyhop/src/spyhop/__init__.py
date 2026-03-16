@@ -9,9 +9,6 @@ from spyhop.query import FilterSpec, RangeFilter
 
 cli = typer.Typer(name="spyhop", help="Query the OMol25 filter index.")
 
-_ELEMENTS = typer.Argument(default=None)
-_URL = typer.Option(None, "--url", help="Override the API base URL (or set SPYHOP_URL)", envvar="SPYHOP_URL")
-
 
 def _build_spec(
     has: list[str],
@@ -44,7 +41,7 @@ def count(
     max_atoms: Annotated[Optional[int], typer.Option(help="Maximum number of atoms")] = None,
     charge: Annotated[Optional[int], typer.Option(help="Formal charge")] = None,
     spin: Annotated[Optional[int], typer.Option(help="Spin multiplicity (2S+1)")] = None,
-    url: Annotated[Optional[str], _URL] = None,
+    url: Annotated[Optional[str], typer.Option("--url", help="Override the API base URL", envvar="SPYHOP_URL")] = None,
 ):
     """Count matching structures and estimate transfer size."""
     kwargs = {"base_url": url} if url else {}
@@ -63,7 +60,7 @@ def manifest(
     charge: Annotated[Optional[int], typer.Option(help="Formal charge")] = None,
     spin: Annotated[Optional[int], typer.Option(help="Spin multiplicity (2S+1)")] = None,
     output: Annotated[str, typer.Option("-o", "--output", help="Output manifest path")] = "manifest.txt",
-    url: Annotated[Optional[str], _URL] = None,
+    url: Annotated[Optional[str], typer.Option("--url", help="Override the API base URL", envvar="SPYHOP_URL")] = None,
 ):
     """Write a Globus transfer manifest for matching structures."""
     kwargs = {"base_url": url} if url else {}

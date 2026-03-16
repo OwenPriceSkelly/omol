@@ -12,6 +12,10 @@
 - [x] Get fairchem installed locally or on a compute node with access to train_4M
 - [x] Confirm storage allocation for Santiago's descriptor data at ALCF (follow up with Ben) 
 	- [ ] NOTE: currently waiting to hear back from ALCF on proposal for more storage. Exploration / infra for 4m not blocked on this. 
+- [ ] Deploy FE to github pages or similar 
+- [ ] CI / CD for deployments (modal app backend)
+- [ ] Basic test suite 
+- [ ] Publishing for CLI package 
 
 ## Spyhop — Index Build
 
